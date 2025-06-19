@@ -84,77 +84,73 @@ const LogoGallery = ({ onBackToHome }) => {
     setShowPreview(true);
   };
 
-  const handlePurchaseClick = async (logo) => {
-    try {
-      // Create order
-      const order = await createRazorpayOrder(logo.price);
-      
-      // Open Razorpay checkout
-      const paymentResponse = await openRazorpayCheckout({
-        amount: order.amount,
-        currency: order.currency,
-        name: "LogoMarket",
-        description: `Purchase ${logo.name}`,
-        order_id: order.id,
-        prefill: {
-          name: "Customer Name",
-          email: "customer@example.com",
-          contact: "9999999999",
-        },
-        theme: {
-          color: "#6366F1",
-        },
-      });
+// Updated LogoGallery.js - Minimal approach
+const handlePurchaseClick = async (logo) => {
+  try {
+     console.log('Starting purchase for logo:', logo); // Debug log
+    // 1. Create order via backend (no customer details needed)
+    const order = await createRazorpayOrder(logo.price, logo.id, logo.name);
+    console.log('Order created:', order); // Debug log
+    // 2. Open Razorpay checkout with minimal details
+    const paymentResponse = await openRazorpayCheckout({
+      amount: order.amount,
+      currency: order.currency,
+      name: "LogoMarket",
+      description: `Purchase ${logo.name}`,
+      order_id: order.id,
+      // No prefill needed - user will enter details in Razorpay popup
+      theme: {
+        color: "#6366F1",
+      },
+    });
+    console.log('Payment response:', paymentResponse);
+    // 3. Verify payment via backend
+    const verification = await verifyPayment(paymentResponse, logo.id);
+    
+    if (verification.success) {
+      // 4. Create purchase record with minimal data
+      const purchaseData = {
+        logo_id: logo.id,
+        razorpay_payment_id: paymentResponse.razorpay_payment_id,
+        razorpay_order_id: paymentResponse.razorpay_order_id,
+        amount: logo.price,
+        currency: 'INR',
+        status: 'completed',
+        // No customer details stored
+      };
+      console.log('Payment verified successfully');
 
-      // Verify payment
-      const verification = await verifyPayment(paymentResponse);
+      const purchase = await createPurchase(purchaseData);
       
-      if (verification.verified) {
-        // Create purchase record
-        const purchaseData = {
-          logo_id: logo.id,
-          razorpay_payment_id: paymentResponse.razorpay_payment_id,
-          razorpay_order_id: paymentResponse.razorpay_order_id,
-          amount: logo.price,
-          currency: 'INR',
-          status: 'completed',
-          customer_email: 'customer@example.com', // Replace with actual user email
-          customer_name: 'Customer Name', // Replace with actual user name
-          customer_phone: '9999999999' // Replace with actual user phone
-        };
-
-        const purchase = await createPurchase(purchaseData);
+      if (purchase) {
+        // 5. Update logo clicks
+        await updateLogoClicks(logo.id);
         
-        if (purchase) {
-          // Update logo clicks
-          await updateLogoClicks(logo.id);
-          
-          // Add to purchased logos with download URLs
-          const downloadUrls = getDownloadUrls(logo);
-          setPurchasedLogos(prev => new Map(prev.set(logo.id, {
-            purchaseId: purchase.id,
-            downloadUrls: downloadUrls
-          })));
-          
-          // Update local logo data
-          setLogos(prevLogos => 
-            prevLogos.map(l => 
-              l.id === logo.id 
-                ? { ...l, total_buy_clicks: (l.total_buy_clicks || 0) + 1 }
-                : l
-            )
-          );
+        // 6. Enable downloads immediately
+        const downloadUrls = getDownloadUrls(logo);
+        setPurchasedLogos(prev => new Map(prev.set(logo.id, {
+          purchaseId: purchase.id,
+          downloadUrls: downloadUrls
+        })));
+        
+        setLogos(prevLogos => 
+          prevLogos.map(l => 
+            l.id === logo.id 
+              ? { ...l, total_buy_clicks: (l.total_buy_clicks || 0) + 1 }
+              : l
+          )
+        );
 
-          alert('Purchase successful! You can now download your logo files.');
-        }
-      }
-    } catch (error) {
-      console.error('Payment error:', error);
-      if (error.message !== 'Payment cancelled') {
-        alert('Payment failed. Please try again.');
+        alert('Payment successful! You can now download your logo files. We do not store any customer details for privacy so its non-refundable.');
       }
     }
-  };
+  } catch (error) {
+    console.error('Payment error:', error);
+    if (error.message !== 'Payment cancelled') {
+      alert(`Payment failed: ${error.message}`);
+    }
+  }
+};
 
   const getDownloadUrls = (logo) => {
     const urls = [];
